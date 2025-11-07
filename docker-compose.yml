@@ -1,0 +1,76 @@
+# Docker Compose Configuration for CarPriceML
+# DAY 5 Sprint 5.3: Docker Compose Configuration
+#
+# This file orchestrates the backend and frontend services.
+# Services: backend (FastAPI), frontend (Streamlit)
+# Network: Custom bridge network for inter-service communication
+# Volumes: Model persistence
+
+version: '3.8'
+
+services:
+  # Backend Service - FastAPI API
+  backend:
+    build:
+      context: ./fastapi
+      dockerfile: Dockerfile
+    container_name: carprice-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount models directory to persist trained model
+      - ./models:/app/models:ro  # Read-only for security
+      - ./data:/app/data:ro       # Read-only access to data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MODEL_PATH=/app/models/rfmodel.joblib
+      - PREPROCESSOR_PATH=/app/models/preprocessor.joblib
+    restart: unless-stopped
+    networks:
+      - carprice-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+  # Frontend Service - Streamlit Web Interface
+  frontend:
+    build:
+      context: ./streamlit
+      dockerfile: Dockerfile
+    container_name: carprice-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      # Critical: Use service name 'backend' as hostname in Docker network
+      - API_URL=http://backend:8000
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - carprice-network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Custom network for service communication
+networks:
+  carprice-network:
+    driver: bridge
+    name: carprice-network
+
+# Volumes for data persistence
+volumes:
+  models-data:
+    name: carpriceml-models
+  prometheus-data:
+    name: carpriceml-prometheus-data
+  grafana-data:
+    name: carpriceml-grafana-data
